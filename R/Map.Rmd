@@ -1,0 +1,44 @@
+---
+title: ''
+output:
+  html_document:
+    df_print: paged
+date: "2025-09-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+stops<- read.csv("~/Downloads/Google Transit/stops copy.csv")
+View(stops)
+```
+
+```{r}
+
+# Load CSV
+library(leaflet)
+library(magrittr)  # for %>%
+stops<- read.csv("~/Downloads/Google Transit/stops copy.csv")
+
+# Create leaflet map centered on Winnipeg
+
+busIcon <- makeIcon(
+  iconUrl = "wt_logo.png",
+  iconWidth = 25, iconHeight = 25
+)
+
+leaflet(stops) %>%
+  # Satellite imagery
+  addProviderTiles("Esri.WorldImagery") %>%
+  addMarkers(
+    lng = ~stop_lon,
+    lat = ~stop_lat,
+    popup = ~stop_name,
+    icon = busIcon
+  ) %>%
+  setView(lng = -97.1384, lat  = 49.8951, zoom = 24)  # Winnipeg center
+```
+
+

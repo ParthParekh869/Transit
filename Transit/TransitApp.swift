@@ -25,7 +25,9 @@ struct TransitApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            StopsView()
+            //StopsView()
+                .preferredColorScheme(.dark)
         }
         .modelContainer(sharedModelContainer)
     }
