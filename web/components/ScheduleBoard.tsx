@@ -180,7 +180,7 @@ export function ScheduleBoard({ stopNumber }: Props) {
                         transition={{ type: "spring", stiffness: 380, damping: 28 }}
                       >
                         <Link
-                          href={ss.tripKey ? `/trips/${ss.tripKey}` : "#"}
+                          href={ss.tripKey ? `/trips/${ss.tripKey}?fromStop=${stopNumber}` : "#"}
                           className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-white/[0.03] p-4 transition-all hover:border-white/15 hover:bg-white/[0.06]"
                         >
                           {/* Route accent stripe */}

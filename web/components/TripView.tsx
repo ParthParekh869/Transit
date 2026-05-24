@@ -2,13 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bus, AlertTriangle, Navigation, CheckCircle2 } from "lucide-react";
-import type { TripSchedule } from "@/lib/transit/types";
+import {
+  Search,
+  Bus,
+  AlertTriangle,
+  Navigation,
+  CheckCircle2,
+  Star,
+  MapPin,
+} from "lucide-react";
+import type { RoutesR, TripSchedule } from "@/lib/transit/types";
 import {
   arrivalLabel,
   formatClock,
   inferTripProgress,
+  relativeStopLabel,
   routeNumberFromVariantKey,
 } from "@/lib/transit/format";
 
@@ -16,7 +26,7 @@ import {
 const TripMap = dynamic(() => import("./TripMap"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[360px] items-center justify-center rounded-2xl border border-white/5 bg-white/[0.02]">
+    <div className="flex h-[460px] items-center justify-center rounded-2xl border border-white/5 bg-white/[0.02]">
       <div className="text-sm text-white/55">Loading map…</div>
     </div>
   ),
@@ -29,13 +39,19 @@ interface Props {
 const REFRESH_MS = 30_000;
 
 export function TripView({ tripKey }: Props) {
+  const searchParams = useSearchParams();
+  const fromStopParam = searchParams?.get("fromStop");
+  const interestStopNumber = fromStopParam ? Number(fromStopParam) : null;
+
   const [data, setData] = useState<TripSchedule | null>(null);
+  const [route, setRoute] = useState<RoutesR | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [focusedStopKey, setFocusedStopKey] = useState<string | null>(null);
 
+  // Trip data fetch + auto-refresh.
   useEffect(() => {
     let cancelled = false;
     const load = (initial: boolean) => {
@@ -66,6 +82,29 @@ export function TripView({ tripKey }: Props) {
     };
   }, [tripKey]);
 
+  // Once the trip is loaded, fetch the route's badgeStyle for theming.
+  const variantKey = data?.trip?.variant?.key;
+  const routeNumber = useMemo(() => routeNumberFromVariantKey(variantKey), [variantKey]);
+  useEffect(() => {
+    if (!routeNumber) return;
+    let cancelled = false;
+    fetch(`/api/transit/routes/${encodeURIComponent(routeNumber)}`)
+      .then(async (r) => {
+        if (!r.ok) return null;
+        const j = (await r.json()) as { route?: RoutesR };
+        return j.route ?? null;
+      })
+      .then((r) => {
+        if (!cancelled && r) setRoute(r);
+      })
+      .catch(() => {
+        // Theming is optional; swallow and fall back to defaults.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeNumber]);
+
   const stops = data?.trip?.scheduledStops ?? [];
   const queryTime = data?.queryTime;
 
@@ -80,18 +119,32 @@ export function TripView({ tripKey }: Props) {
     return stops.filter((s) => (s.stop?.name ?? "").toLowerCase().includes(q));
   }, [stops, search]);
 
-  const routeNumber = routeNumberFromVariantKey(data?.trip?.variant?.key);
   const progress =
-    stops.length > 0
-      ? Math.min(1, finished ? 1 : nextIndex / stops.length)
-      : 0;
+    stops.length > 0 ? Math.min(1, finished ? 1 : nextIndex / stops.length) : 0;
   const nextStop = stops[nextIndex];
   const nextStopEta = arrivalLabel(
     queryTime,
     nextStop?.times?.arrival?.estimated ?? nextStop?.times?.departure?.estimated
   );
 
-  // -- Loading --
+  // The user's "stop of interest" — match by stop number across the trip.
+  const interestEntry = useMemo(() => {
+    if (interestStopNumber == null) return null;
+    const idx = stops.findIndex((s) => s.stop?.number === interestStopNumber);
+    if (idx < 0) return null;
+    return { idx, stop: stops[idx] };
+  }, [stops, interestStopNumber]);
+
+  const interestPassed =
+    interestEntry != null && (finished || interestEntry.idx < nextIndex);
+  const interestProgress =
+    interestEntry != null && stops.length > 0 ? interestEntry.idx / stops.length : null;
+
+  const routeBadge = route?.badgeStyle ?? null;
+  const routeAccent = routeBadge?.backgroundColor ?? "#22d3ee";
+  const routeLabel = route?.badgeLabel ? String(route.badgeLabel) : routeNumber ?? "BUS";
+
+  // --- Loading ---
   if (loading && !data) {
     return (
       <div className="flex flex-col items-center gap-4 py-16">
@@ -139,19 +192,28 @@ export function TripView({ tripKey }: Props) {
           )}
         </motion.div>
 
-        <h1 className="text-4xl font-bold tracking-tight text-white">
-          Live Bus Tracker
-        </h1>
+        <h1 className="text-4xl font-bold tracking-tight text-white">Live Bus Tracker</h1>
 
         <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-white/65">
-          {routeNumber && (
-            <span className="rounded-full bg-gradient-to-r from-indigo-500/30 to-cyan-500/30 px-3 py-1 text-xs font-bold tracking-tight text-white ring-1 ring-white/15">
-              Route {routeNumber}
-            </span>
-          )}
+          <span
+            className="rounded-full px-3 py-1 text-xs font-bold tracking-tight ring-1"
+            style={{
+              backgroundColor: routeBadge?.backgroundColor ?? "#1e293b",
+              color: routeBadge?.color ?? "#ffffff",
+              borderColor: routeBadge?.borderColor ?? "rgba(255,255,255,0.2)",
+            }}
+          >
+            Route {routeLabel}
+          </span>
           <span className="font-mono tabular-nums text-white/50">Trip #{tripKey}</span>
           <span className="text-white/25">·</span>
           <span>{stops.length} stops</span>
+          {route?.name && (
+            <>
+              <span className="text-white/25">·</span>
+              <span className="truncate text-white/70">{route.name}</span>
+            </>
+          )}
         </div>
 
         {!finished && nextStop?.stop?.name && (
@@ -161,33 +223,82 @@ export function TripView({ tripKey }: Props) {
             animate={{ opacity: 1, y: 0 }}
             className="mx-auto flex max-w-md items-center justify-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-4 py-2.5 text-sm"
           >
-            <Navigation className="h-4 w-4 text-cyan-300" />
+            <Navigation className="h-4 w-4" style={{ color: routeAccent }} />
             <span className="text-white/55">Next:</span>
-            <span className="truncate font-semibold text-white">
-              {nextStop.stop.name}
+            <span className="truncate font-semibold text-white">{nextStop.stop.name}</span>
+            <span className="font-bold tabular-nums" style={{ color: routeAccent }}>
+              {nextStopEta}
             </span>
-            <span className="font-bold tabular-nums text-cyan-300">{nextStopEta}</span>
           </motion.div>
         )}
 
-        {/* Trip progress bar */}
+        {/* ENHANCED PROGRESS BAR with origin / your-stop / bus / destination markers */}
         {stops.length > 0 && (
-          <div className="mx-auto max-w-md space-y-1">
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
-              <motion.div
-                className="h-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400"
-                initial={{ width: 0 }}
-                animate={{ width: `${progress * 100}%` }}
-                transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-              />
-            </div>
-            <div className="flex justify-between text-[10px] uppercase tracking-[0.16em] text-white/35">
-              <span>{Math.min(nextIndex, stops.length)} passed</span>
-              <span>{Math.max(0, stops.length - nextIndex)} ahead</span>
-            </div>
-          </div>
+          <ProgressBar
+            progress={progress}
+            interestProgress={interestProgress}
+            stops={stops.length}
+            nextIndex={nextIndex}
+            finished={finished}
+            accent={routeAccent}
+          />
         )}
       </header>
+
+      {/* INTEREST-STOP BANNER */}
+      {interestEntry && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`flex items-center gap-3 rounded-2xl border p-4 ${
+            interestPassed
+              ? "border-emerald-400/30 bg-emerald-500/10"
+              : "border-amber-300/30 bg-amber-500/10"
+          }`}
+        >
+          <div
+            className={`flex h-10 w-10 flex-none items-center justify-center rounded-xl ${
+              interestPassed
+                ? "bg-emerald-500/20 text-emerald-300"
+                : "bg-amber-500/20 text-amber-300"
+            }`}
+          >
+            {interestPassed ? (
+              <CheckCircle2 className="h-5 w-5" />
+            ) : (
+              <Star className="h-5 w-5 fill-current" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">
+              {interestPassed ? "Bus already passed" : "Your stop"}
+            </div>
+            <div className="truncate text-base font-semibold text-white">
+              {interestEntry.stop.stop?.name}
+            </div>
+          </div>
+          <div className="text-right">
+            <div
+              className={`text-lg font-bold tabular-nums ${
+                interestPassed ? "text-emerald-200" : "text-amber-200"
+              }`}
+            >
+              {relativeStopLabel(
+                queryTime,
+                interestEntry.stop.times?.arrival?.estimated ??
+                  interestEntry.stop.times?.departure?.estimated
+              )}
+            </div>
+            <button
+              onClick={() => setFocusedStopKey(interestEntry.stop.key ?? null)}
+              className="mt-0.5 inline-flex items-center gap-1 text-xs text-white/55 transition hover:text-white"
+            >
+              <MapPin className="h-3 w-3" />
+              Show on map
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {error && (
         <div className="flex items-center gap-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-100">
@@ -216,6 +327,9 @@ export function TripView({ tripKey }: Props) {
             nextStopIndex={nextIndex}
             finished={finished}
             focusedStopKey={focusedStopKey}
+            interestStopNumber={interestStopNumber}
+            routeBadgeStyle={routeBadge}
+            routeLabel={routeLabel}
           />
 
           {/* STOP LIST */}
@@ -233,6 +347,8 @@ export function TripView({ tripKey }: Props) {
                 const idx = stops.indexOf(s);
                 const isPassed = idx < nextIndex && !finished;
                 const isNext = idx === nextIndex && !finished;
+                const isInterest =
+                  interestStopNumber != null && s.stop?.number === interestStopNumber;
                 const lat = s.stop?.centre?.geographic?.latitude;
                 const lon = s.stop?.centre?.geographic?.longitude;
                 const isFocused = focusedStopKey === s.key;
@@ -252,11 +368,13 @@ export function TripView({ tripKey }: Props) {
                       "group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-2xl border p-3.5 transition-all",
                       isFocused
                         ? "border-cyan-300/70 bg-cyan-500/[0.10] shadow-[0_0_0_2px_rgba(34,211,238,0.30)]"
-                        : isNext
-                          ? "border-cyan-400/40 bg-cyan-500/[0.06] shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
-                          : isPassed
-                            ? "border-white/5 bg-white/[0.015] opacity-55"
-                            : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]",
+                        : isInterest
+                          ? "border-amber-300/40 bg-amber-500/[0.06] shadow-[0_0_0_1px_rgba(251,191,36,0.20)]"
+                          : isNext
+                            ? "border-cyan-400/40 bg-cyan-500/[0.06] shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
+                            : isPassed
+                              ? "border-white/5 bg-white/[0.015] opacity-55"
+                              : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]",
                     ].join(" ")}
                   >
                     {/* Index dot column */}
@@ -264,12 +382,15 @@ export function TripView({ tripKey }: Props) {
                       <div
                         className={[
                           "h-2.5 w-2.5 rounded-full ring-2 ring-white/10",
-                          isNext
-                            ? "bg-cyan-400 ring-cyan-300/60"
-                            : isPassed
-                              ? "bg-white/30"
-                              : "bg-white/15",
+                          isInterest
+                            ? "bg-amber-300 ring-amber-200/60"
+                            : isNext
+                              ? "ring-cyan-300/60"
+                              : isPassed
+                                ? "bg-white/30"
+                                : "bg-white/15",
                         ].join(" ")}
+                        style={isNext && !isInterest ? { backgroundColor: routeAccent } : undefined}
                       />
                     </div>
 
@@ -282,6 +403,9 @@ export function TripView({ tripKey }: Props) {
                         >
                           {s.stop?.name ?? "Unnamed Stop"}
                         </span>
+                        {isInterest && (
+                          <Star className="h-3.5 w-3.5 flex-none fill-amber-300 text-amber-300" />
+                        )}
                         {isNext && (
                           <span className="flex-none rounded-full bg-cyan-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-cyan-200 ring-1 ring-cyan-300/30">
                             Next
@@ -304,7 +428,13 @@ export function TripView({ tripKey }: Props) {
                     <div className="text-right">
                       <div
                         className={`text-sm font-bold tabular-nums ${
-                          isNext ? "text-cyan-300" : isPassed ? "text-white/40" : "text-white/80"
+                          isInterest
+                            ? "text-amber-200"
+                            : isNext
+                              ? "text-cyan-300"
+                              : isPassed
+                                ? "text-white/40"
+                                : "text-white/80"
                         }`}
                       >
                         {arrivalLabel(
@@ -346,5 +476,82 @@ export function TripView({ tripKey }: Props) {
         </>
       )}
     </motion.div>
+  );
+}
+
+/**
+ * Annotated trip progress bar.
+ *   Origin -------- (your stop) ----- (bus) -------- Destination
+ * The fill is the route's accent color so the whole tracker feels themed.
+ */
+function ProgressBar({
+  progress,
+  interestProgress,
+  stops,
+  nextIndex,
+  finished,
+  accent,
+}: {
+  progress: number;
+  interestProgress: number | null;
+  stops: number;
+  nextIndex: number;
+  finished: boolean;
+  accent: string;
+}) {
+  return (
+    <div className="mx-auto max-w-md space-y-2">
+      <div className="relative h-2 rounded-full bg-white/5">
+        <motion.div
+          className="h-full rounded-full"
+          style={{
+            background: `linear-gradient(90deg, ${accent}88, ${accent})`,
+            boxShadow: `0 0 12px ${accent}99`,
+          }}
+          initial={{ width: 0 }}
+          animate={{ width: `${progress * 100}%` }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        />
+
+        {/* Origin tick */}
+        <div className="absolute left-0 top-1/2 h-3 w-px -translate-y-1/2 bg-white/40" />
+        {/* Destination tick */}
+        <div className="absolute right-0 top-1/2 h-3 w-px -translate-y-1/2 bg-white/40" />
+
+        {/* Bus marker on the bar */}
+        {!finished && (
+          <motion.div
+            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+            style={{
+              left: `${progress * 100}%`,
+              width: 14,
+              height: 14,
+              background: accent,
+            }}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 320, damping: 22 }}
+          />
+        )}
+
+        {/* Interest-stop marker on the bar */}
+        {interestProgress != null && (
+          <div
+            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+            style={{ left: `${interestProgress * 100}%` }}
+          >
+            <Star className="h-3.5 w-3.5 fill-amber-300 text-amber-300 drop-shadow-[0_0_4px_rgba(251,191,36,0.7)]" />
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-between text-[10px] uppercase tracking-[0.16em] text-white/40">
+        <span>Origin</span>
+        <span className="text-white/55">
+          {Math.min(nextIndex, stops)} / {stops} stops
+        </span>
+        <span>Destination</span>
+      </div>
+    </div>
   );
 }

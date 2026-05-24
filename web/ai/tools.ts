@@ -33,6 +33,7 @@
 
 import {
   findNearbyStops,
+  getRouteByNumber,
   getRoutesForStop,
   getStopSchedule,
   getTripDetail,
@@ -120,6 +121,24 @@ const tools: ToolSpec[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "getRouteByNumber",
+    description:
+      "Look up a single transit route by its number (e.g. '60', 'F6'). Returns the route's " +
+      "name, badge label, and badge color (used for theming the live tracker visualization). " +
+      "Useful when the user asks 'what color is route 60' or 'is route 47 a regular or BLUE route'.",
+    parameters: {
+      type: "object",
+      required: ["routeNumber"],
+      properties: {
+        routeNumber: {
+          type: "string",
+          description: "Route number, e.g. '60', 'F6', 'BLUE'.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
 ];
 
 // --- OpenAI / Vercel AI SDK format ---------------------------------------
@@ -143,7 +162,12 @@ export const anthropicTools = tools.map((t) => ({
 
 // --- Dispatcher -----------------------------------------------------------
 
-export type ToolName = "findNearbyStops" | "getRoutesForStop" | "getStopSchedule" | "getTripDetail";
+export type ToolName =
+  | "findNearbyStops"
+  | "getRoutesForStop"
+  | "getStopSchedule"
+  | "getTripDetail"
+  | "getRouteByNumber";
 
 /**
  * Dispatches a tool call by name. Throws if the tool is unknown or the args
@@ -166,6 +190,13 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
     }
     case "getTripDetail": {
       return getTripDetail(num(args.tripKey, "tripKey"));
+    }
+    case "getRouteByNumber": {
+      const rn = args.routeNumber;
+      if (typeof rn !== "string" && typeof rn !== "number") {
+        throw new Error(`Tool argument "routeNumber" is required`);
+      }
+      return getRouteByNumber(rn);
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
