@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { MapPin, Search, Locate, AlertTriangle, RefreshCw } from "lucide-react";
 import type { StopResponse, StopS } from "@/lib/transit/types";
 import { StopCard } from "./StopCard";
+import { StopCardSkeleton } from "./Skeleton";
 
 interface Props {
   /** Search radius in meters. */
@@ -27,8 +30,7 @@ export function StopsList({ radius }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const url = `/api/transit/stops?lat=${state.lat}&lon=${state.lon}&distance=${radius}`;
-    fetch(url)
+    fetch(`/api/transit/stops?lat=${state.lat}&lon=${state.lon}&distance=${radius}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return (await r.json()) as StopResponse;
@@ -53,20 +55,12 @@ export function StopsList({ radius }: Props) {
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
-      setState({
-        kind: "denied",
-        message: "Your browser doesn't support geolocation.",
-      });
+      setState({ kind: "denied", message: "Your browser doesn't support geolocation." });
       return;
     }
     setState({ kind: "requesting" });
     navigator.geolocation.getCurrentPosition(
-      (pos) =>
-        setState({
-          kind: "ready",
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-        }),
+      (pos) => setState({ kind: "ready", lat: pos.coords.latitude, lon: pos.coords.longitude }),
       (err) =>
         setState({
           kind: "denied",
@@ -86,83 +80,153 @@ export function StopsList({ radius }: Props) {
     return stops.filter((s) => (s.name ?? "").toLowerCase().includes(q));
   }, [stops, search]);
 
-  // --- Permission gate states ---
-  if (state.kind === "needs-permission" || state.kind === "denied") {
+  // --- Permission gate ---
+  if (state.kind !== "ready") {
     return (
-      <div className="glass mx-auto max-w-md rounded-2xl p-6 text-center">
-        <div className="mb-3 text-4xl">📍</div>
-        <h2 className="text-xl font-semibold">Share your location</h2>
-        <p className="mt-2 text-sm text-white/70">
-          We need your location to find transit stops near you. Nothing is stored —
-          your coordinates are sent only to fetch the nearby stops list.
-        </p>
-        {state.kind === "denied" && (
-          <div className="mt-4 rounded-xl bg-red-500/20 p-3 text-sm text-red-100 ring-1 ring-red-400/40">
-            {state.message}
-          </div>
-        )}
-        <button
-          onClick={requestLocation}
-          className="mt-5 rounded-xl bg-white/20 px-5 py-3 text-sm font-semibold text-white ring-1 ring-white/30 transition hover:bg-white/30"
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={state.kind}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto max-w-md"
         >
-          {state.kind === "denied" ? "Try again" : "Allow location"}
-        </button>
-      </div>
-    );
-  }
+          <div className="glass-strong rounded-3xl p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/30 to-cyan-500/30 ring-1 ring-white/15">
+              {state.kind === "requesting" ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+                >
+                  <Locate className="h-7 w-7 text-white" strokeWidth={1.8} />
+                </motion.div>
+              ) : state.kind === "denied" ? (
+                <AlertTriangle className="h-7 w-7 text-rose-300" strokeWidth={1.8} />
+              ) : (
+                <MapPin className="h-7 w-7 text-white" strokeWidth={1.8} />
+              )}
+            </div>
 
-  if (state.kind === "requesting") {
-    return (
-      <div className="glass mx-auto max-w-md rounded-2xl p-6 text-center">
-        <div className="mb-3 text-4xl">📡</div>
-        <h2 className="text-xl font-semibold">Getting your location…</h2>
-        <p className="mt-2 text-sm text-white/70">
-          Look for the browser permission prompt.
-        </p>
-      </div>
+            <h2 className="text-2xl font-semibold tracking-tight text-white">
+              {state.kind === "requesting"
+                ? "Getting your location"
+                : state.kind === "denied"
+                  ? "Location unavailable"
+                  : "Share your location"}
+            </h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-white/65">
+              {state.kind === "requesting"
+                ? "Look for the browser permission prompt at the top of your window."
+                : state.kind === "denied"
+                  ? state.message
+                  : "We need your location to find transit stops near you. Coordinates are sent only to fetch the nearby stops list — nothing is stored."}
+            </p>
+
+            {state.kind !== "requesting" && (
+              <motion.button
+                onClick={requestLocation}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-glow-lg ring-1 ring-white/20 transition hover:shadow-glow-lg"
+              >
+                <Locate className="h-4 w-4" />
+                {state.kind === "denied" ? "Try again" : "Allow location"}
+              </motion.button>
+            )}
+          </div>
+        </motion.div>
+      </AnimatePresence>
     );
   }
 
   // --- Ready state ---
   return (
-    <div className="flex flex-col gap-4">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+      className="flex flex-col gap-5"
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search stops by name…"
-          className="flex-1 rounded-xl bg-white/15 px-4 py-3 text-white placeholder-white/60 outline-none ring-1 ring-white/20 focus:ring-white/40"
-        />
-        <button
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search stops by name…"
+            className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-3 pl-11 pr-4 text-sm text-white placeholder-white/40 outline-none ring-0 transition focus:border-cyan-400/50 focus:bg-white/[0.07]"
+          />
+        </div>
+        <motion.button
           onClick={requestLocation}
-          className="rounded-xl bg-white/15 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/20 transition hover:bg-white/25"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white transition hover:bg-white/[0.08]"
           title="Refresh your location"
         >
+          <RefreshCw className="h-4 w-4" />
           Refresh location
-        </button>
+        </motion.button>
       </div>
 
-      <div className="text-xs text-white/60">
-        Centered at {state.lat.toFixed(4)}, {state.lon.toFixed(4)} · radius {radius} m
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-white/35">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        Centered at {state.lat.toFixed(4)}, {state.lon.toFixed(4)} · {radius} m radius
       </div>
 
-      {loading && <div className="text-white/70">Loading nearby stops…</div>}
       {error && (
-        <div className="rounded-xl bg-red-500/20 p-4 text-red-100 ring-1 ring-red-400/40">
-          {error}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-100"
+        >
+          <AlertTriangle className="h-5 w-5 flex-none" />
+          <div>{error}</div>
+        </motion.div>
+      )}
+
+      {loading && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <StopCardSkeleton key={i} />
+          ))}
         </div>
       )}
 
       {!loading && !error && filtered.length === 0 && (
-        <div className="text-white/70">No stops found nearby.</div>
+        <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-8 text-center text-sm text-white/55">
+          No stops match your search.
+        </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {filtered.map((s) => (
-          <StopCard key={s.key} stop={s} />
-        ))}
-      </div>
-    </div>
+      <motion.div
+        className="grid gap-4 sm:grid-cols-2"
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: {},
+          show: { transition: { staggerChildren: 0.04, delayChildren: 0.05 } },
+        }}
+      >
+        <AnimatePresence mode="popLayout">
+          {filtered.map((s) => (
+            <motion.div
+              key={s.key}
+              layout
+              variants={{
+                hidden: { opacity: 0, y: 12 },
+                show: { opacity: 1, y: 0 },
+              }}
+              transition={{ type: "spring", stiffness: 320, damping: 26 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <StopCard stop={s} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
+    </motion.div>
   );
 }
