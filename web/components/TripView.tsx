@@ -34,6 +34,7 @@ export function TripView({ tripKey }: Props) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [focusedStopKey, setFocusedStopKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,6 +215,7 @@ export function TripView({ tripKey }: Props) {
             scheduledStops={stops}
             nextStopIndex={nextIndex}
             finished={finished}
+            focusedStopKey={focusedStopKey}
           />
 
           {/* STOP LIST */}
@@ -233,6 +235,7 @@ export function TripView({ tripKey }: Props) {
                 const isNext = idx === nextIndex && !finished;
                 const lat = s.stop?.centre?.geographic?.latitude;
                 const lon = s.stop?.centre?.geographic?.longitude;
+                const isFocused = focusedStopKey === s.key;
                 return (
                   <motion.div
                     key={s.key}
@@ -242,13 +245,18 @@ export function TripView({ tripKey }: Props) {
                       show: { opacity: 1, x: 0 },
                     }}
                     transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                    onClick={() => setFocusedStopKey(s.key ?? null)}
+                    whileHover={{ x: 2 }}
+                    whileTap={{ scale: 0.99 }}
                     className={[
-                      "group relative flex items-center gap-3 overflow-hidden rounded-2xl border p-3.5 transition-all",
-                      isNext
-                        ? "border-cyan-400/40 bg-cyan-500/[0.06] shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
-                        : isPassed
-                          ? "border-white/5 bg-white/[0.015] opacity-55"
-                          : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]",
+                      "group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-2xl border p-3.5 transition-all",
+                      isFocused
+                        ? "border-cyan-300/70 bg-cyan-500/[0.10] shadow-[0_0_0_2px_rgba(34,211,238,0.30)]"
+                        : isNext
+                          ? "border-cyan-400/40 bg-cyan-500/[0.06] shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
+                          : isPassed
+                            ? "border-white/5 bg-white/[0.015] opacity-55"
+                            : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]",
                     ].join(" ")}
                   >
                     {/* Index dot column */}
