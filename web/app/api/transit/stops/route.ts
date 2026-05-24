@@ -3,16 +3,23 @@ import { findNearbyStops } from "@/lib/transit/client";
 
 /**
  * GET /api/transit/stops?lat=..&lon=..&distance=..
- * Proxies to https://api.winnipegtransit.com/v4/stops.json
+ * lat and lon are required — there is no server-side coordinate default;
+ * callers (the UI or AI tools) must supply real coordinates.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  const latStr = searchParams.get("lat");
+  const lonStr = searchParams.get("lon");
 
-  const lat = Number(searchParams.get("lat") ?? process.env.DEFAULT_LAT ?? 49.809438);
-  const lon = Number(searchParams.get("lon") ?? process.env.DEFAULT_LON ?? -97.130437);
-  const distance = Number(
-    searchParams.get("distance") ?? process.env.DEFAULT_RADIUS_M ?? 1000
-  );
+  if (latStr == null || lonStr == null) {
+    return NextResponse.json(
+      { error: "lat and lon query parameters are required" },
+      { status: 400 }
+    );
+  }
+  const lat = Number(latStr);
+  const lon = Number(lonStr);
+  const distance = Number(searchParams.get("distance") ?? process.env.DEFAULT_RADIUS_M ?? 1000);
 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return NextResponse.json({ error: "lat and lon must be numbers" }, { status: 400 });

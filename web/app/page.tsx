@@ -2,9 +2,9 @@ import { StopsList } from "@/components/StopsList";
 import { NavBar } from "@/components/NavBar";
 
 export default function HomePage() {
-  const defaultLat = Number(process.env.DEFAULT_LAT ?? 49.809438);
-  const defaultLon = Number(process.env.DEFAULT_LON ?? -97.130437);
-  const defaultDistance = Number(process.env.DEFAULT_RADIUS_M ?? 1000);
+  // No coordinate defaults — the user is prompted for geolocation upfront.
+  // Only the search radius is configurable server-side.
+  const radius = Number(process.env.DEFAULT_RADIUS_M ?? 1000);
 
   return (
     <>
@@ -17,11 +17,7 @@ export default function HomePage() {
           </p>
         </header>
 
-        <StopsList
-          defaultLat={defaultLat}
-          defaultLon={defaultLon}
-          defaultDistance={defaultDistance}
-        />
+        <StopsList radius={radius} />
       </main>
     </>
   );
