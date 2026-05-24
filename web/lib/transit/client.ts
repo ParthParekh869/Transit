@@ -9,6 +9,7 @@
 import type {
   StopResponse,
   RoutesResponse,
+  RoutesR,
   StopScheduleResponse,
   TripSchedule,
 } from "./types";
@@ -72,4 +73,28 @@ export function getStopSchedule(stopNumber: number): Promise<StopScheduleRespons
 /** Full trip detail — stop list, lat/lons — for a tripKey. */
 export function getTripDetail(tripKey: number): Promise<TripSchedule> {
   return get<TripSchedule>(`/trips/${tripKey}.json`, {});
+}
+
+/**
+ * Look up a single route by its number. Returns the route record (with
+ * its `badgeStyle`) so the UI can theme the live tracker by route color,
+ * or null if the route is unknown.
+ *
+ * Uses the path-based endpoint `/routes/{number}.json` — the query-filter
+ * form (`/routes.json?route=N`) silently ignores the filter and returns
+ * a paginated list of unrelated routes, so don't use it.
+ */
+export async function getRouteByNumber(
+  routeNumber: string | number
+): Promise<RoutesR | null> {
+  try {
+    const data = await get<{ route?: RoutesR }>(
+      `/routes/${encodeURIComponent(String(routeNumber))}.json`,
+      {}
+    );
+    return data.route ?? null;
+  } catch {
+    // 404 / parse failure / unknown route — caller treats as null and skips theming.
+    return null;
+  }
 }

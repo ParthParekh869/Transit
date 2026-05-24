@@ -11,41 +11,20 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
-import { Bus, Route, Crosshair } from "lucide-react";
-import type { ScheduledStopT } from "@/lib/transit/types";
+import { Bus, Route, Crosshair, Star } from "lucide-react";
+import type { ScheduledStopT, BadgeStyle } from "@/lib/transit/types";
+import { bearing, lerpLatLon } from "@/lib/transit/format";
 
 // Suppress Leaflet's default-icon URL lookup warning under bundlers.
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
-
-/** Bus marker (pulsing halo handled in globals.css). */
-const busIcon = L.divIcon({
-  className: "transit-bus-marker",
-  html: `
-    <div class="bus-marker">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white"
-           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/>
-        <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/>
-        <circle cx="7" cy="18" r="2"/><circle cx="16" cy="18" r="2"/>
-      </svg>
-    </div>`,
-  iconSize: [38, 38],
-  iconAnchor: [19, 19],
-});
-
-/** Pulsing ring shown at the next stop, behind the bus marker. */
-const nextStopRingIcon = L.divIcon({
-  className: "transit-next-stop-ring",
-  html: `<div class="next-stop-ring"></div>`,
-  iconSize: [60, 60],
-  iconAnchor: [30, 30],
-});
 
 type ViewMode = "bus" | "full";
 
 /** Number of stops on each side of the bus included in "Follow bus" mode. */
 const WINDOW_BEHIND = 2;
 const WINDOW_AHEAD = 4;
+/** Place a direction arrow every Nth stop along the upcoming polyline. */
+const ARROW_EVERY = 5;
 
 interface Props {
   scheduledStops: ScheduledStopT[];
@@ -55,6 +34,68 @@ interface Props {
   finished: boolean;
   /** Stop key of a stop the user clicked in the list — map will fly to it. */
   focusedStopKey?: string | null;
+  /** Stop number of the user's "stop of interest" (where they came from) — gets a star. */
+  interestStopNumber?: number | null;
+  /** Route's badge style from the API — used to color the polyline + bus marker. */
+  routeBadgeStyle?: BadgeStyle | null;
+  /** The route number/label to show inside the bus marker (e.g. "60", "F6"). */
+  routeLabel?: string | null;
+}
+
+/** Build a route-themed bus marker on the fly. */
+function makeBusIcon(label: string | null, badge: BadgeStyle | null): L.DivIcon {
+  const bg = badge?.backgroundColor ?? "#22d3ee";
+  const fg = badge?.color ?? "#0f172a";
+  const safeLabel = (label ?? "BUS").slice(0, 4);
+  return L.divIcon({
+    className: "transit-bus-marker",
+    html: `
+      <div class="bus-marker-pill" style="background:${bg};color:${fg};">
+        <span class="bus-marker-pill__inner">${escapeHtml(safeLabel)}</span>
+      </div>`,
+    iconSize: [54, 30],
+    iconAnchor: [27, 15],
+  });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;"
+  );
+}
+
+const nextStopRingIcon = L.divIcon({
+  className: "transit-next-stop-ring",
+  html: `<div class="next-stop-ring"></div>`,
+  iconSize: [60, 60],
+  iconAnchor: [30, 30],
+});
+
+const interestStopIcon = L.divIcon({
+  className: "transit-interest-stop",
+  html: `
+    <div class="interest-marker">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fff" stroke-width="1.4">
+        <polygon points="12,2 15.1,8.6 22,9.6 17,14.5 18.2,21.5 12,18.1 5.8,21.5 7,14.5 2,9.6 8.9,8.6"/>
+      </svg>
+    </div>`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
+
+/** Direction-of-travel chevron, rotated to match bearing. */
+function makeArrowIcon(deg: number, color: string): L.DivIcon {
+  return L.divIcon({
+    className: "transit-arrow",
+    html: `
+      <div class="route-arrow" style="transform:rotate(${deg}deg); color:${color};">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2 L20 18 L12 14 L4 18 Z" />
+        </svg>
+      </div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
 }
 
 export default function TripMap({
@@ -62,6 +103,9 @@ export default function TripMap({
   nextStopIndex,
   finished,
   focusedStopKey,
+  interestStopNumber,
+  routeBadgeStyle,
+  routeLabel,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("bus");
   // Ref to the underlying Leaflet map. Components rendered OUTSIDE
@@ -91,7 +135,10 @@ export default function TripMap({
     );
   }
 
-  // Split the polyline into "passed" (gray) and "upcoming" (cyan) segments.
+  // Route theming colors with sensible fallbacks.
+  const routeColor = routeBadgeStyle?.backgroundColor ?? "#22d3ee";
+  const passedColor = "#475569"; // slate-600 — desaturated regardless of route color
+
   const splitAt = Math.max(0, Math.min(points.length, nextStopIndex));
   const passed = points.slice(0, splitAt).map((p) => [p.lat, p.lon] as [number, number]);
   const upcoming = points
@@ -108,15 +155,30 @@ export default function TripMap({
   const busPos: [number, number] | null = busPoint ? [busPoint.lat, busPoint.lon] : null;
   const center: [number, number] = busPos ?? [points[0].lat, points[0].lon];
 
+  // Direction-of-travel arrows along the upcoming polyline. Place one at the
+  // midpoint between every Nth pair of stops, rotated to match bearing.
+  const arrows = useMemo(() => {
+    const out: { pos: [number, number]; deg: number }[] = [];
+    const upcomingPts = points.slice(Math.max(0, splitAt - 1));
+    for (let i = 0; i < upcomingPts.length - 1; i += ARROW_EVERY) {
+      const a = upcomingPts[i];
+      const b = upcomingPts[i + 1];
+      if (!a || !b) continue;
+      const mid = lerpLatLon(a, b, 0.5);
+      out.push({ pos: [mid.lat, mid.lon], deg: bearing(a, b) });
+    }
+    return out;
+  }, [points, splitAt]);
+
+  const busIcon = useMemo(
+    () => makeBusIcon(routeLabel ?? null, routeBadgeStyle ?? null),
+    [routeLabel, routeBadgeStyle]
+  );
+
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] shadow-glow">
-      <div className="h-[420px]">
-        <MapContainer
-          center={center}
-          zoom={14}
-          scrollWheelZoom
-          ref={mapRef}
-        >
+      <div className="h-[460px]">
+        <MapContainer center={center} zoom={14} scrollWheelZoom ref={mapRef}>
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -129,37 +191,62 @@ export default function TripMap({
             focusedStopKey={focusedStopKey ?? null}
           />
 
+          {/* Passed segment — desaturated and dashed */}
           {passed.length >= 2 && (
             <Polyline
               positions={passed}
-              pathOptions={{ color: "#475569", weight: 3, opacity: 0.55, dashArray: "1 6" }}
+              pathOptions={{
+                color: passedColor,
+                weight: 3,
+                opacity: 0.55,
+                dashArray: "1 6",
+              }}
             />
           )}
+          {/* Upcoming segment — themed in the route's badge color */}
           {upcoming.length >= 2 && (
             <Polyline
               positions={upcoming}
-              pathOptions={{ color: "#22d3ee", weight: 4, opacity: 0.95 }}
+              pathOptions={{ color: routeColor, weight: 4, opacity: 0.95 }}
             />
           )}
+
+          {/* Direction arrows along the upcoming route */}
+          {arrows.map((a, i) => (
+            <Marker
+              key={`arrow-${i}`}
+              position={a.pos}
+              icon={makeArrowIcon(a.deg, routeColor)}
+              interactive={false}
+            />
+          ))}
 
           {points.map((p) => {
             const isPassed = p.idx < splitAt;
             const isNext = !finished && p.idx === splitAt;
+            const isInterest =
+              interestStopNumber != null && p.stop.stop?.number === interestStopNumber;
             return (
               <CircleMarker
                 key={p.stop.key}
                 center={[p.lat, p.lon]}
-                radius={isNext ? 6 : isPassed ? 3 : 5}
+                radius={isInterest ? 7 : isNext ? 6 : isPassed ? 3 : 5}
                 pathOptions={{
-                  color: "#0f172a",
-                  fillColor: isNext ? "#22d3ee" : isPassed ? "#64748b" : "#94a3b8",
+                  color: isInterest ? "#fbbf24" : "#0f172a",
+                  fillColor: isInterest
+                    ? "#fbbf24"
+                    : isNext
+                      ? routeColor
+                      : isPassed
+                        ? "#64748b"
+                        : "#94a3b8",
                   fillOpacity: isPassed ? 0.55 : 1,
-                  weight: 1.5,
+                  weight: isInterest ? 2 : 1.5,
                   className: "stop-circle",
                 }}
                 eventHandlers={{
                   mouseover: (e) => e.target.setStyle({ weight: 3 }),
-                  mouseout: (e) => e.target.setStyle({ weight: 1.5 }),
+                  mouseout: (e) => e.target.setStyle({ weight: isInterest ? 2 : 1.5 }),
                 }}
               >
                 <Tooltip direction="top" offset={[0, -6]} opacity={1} className="stop-tooltip">
@@ -169,6 +256,7 @@ export default function TripMap({
                     </div>
                     <div className="text-[10px] text-white/55">
                       #{p.stop.stop?.number}
+                      {isInterest && <span className="ml-1 text-amber-300">· Your stop</span>}
                       {isNext && <span className="ml-1 text-cyan-300">· Next stop</span>}
                       {isPassed && <span className="ml-1 text-white/40">· Passed</span>}
                     </div>
@@ -177,6 +265,22 @@ export default function TripMap({
               </CircleMarker>
             );
           })}
+
+          {/* Star marker overlay for the user's stop of interest */}
+          {interestStopNumber != null &&
+            (() => {
+              const interestPt = points.find(
+                (p) => p.stop.stop?.number === interestStopNumber
+              );
+              if (!interestPt) return null;
+              return (
+                <Marker
+                  position={[interestPt.lat, interestPt.lon]}
+                  icon={interestStopIcon}
+                  interactive={false}
+                />
+              );
+            })()}
 
           {busPos && (
             <>
@@ -232,6 +336,22 @@ export default function TripMap({
           >
             <Crosshair className="h-3.5 w-3.5" />
             Recenter
+          </button>
+        )}
+
+        {interestStopNumber != null && (
+          <button
+            onClick={() => {
+              const target = points.find((p) => p.stop.stop?.number === interestStopNumber);
+              if (target && mapRef.current) {
+                mapRef.current.flyTo([target.lat, target.lon], 16, { animate: true, duration: 0.8 });
+              }
+            }}
+            className="pointer-events-auto flex items-center gap-2 self-end rounded-xl border border-amber-300/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-100 backdrop-blur-md shadow-glow transition hover:bg-amber-500/25"
+            aria-label="Center on your stop"
+          >
+            <Star className="h-3.5 w-3.5 fill-amber-300 text-amber-300" />
+            Your stop
           </button>
         )}
       </div>
@@ -297,5 +417,3 @@ function ViewController({
 
   return null;
 }
-
-

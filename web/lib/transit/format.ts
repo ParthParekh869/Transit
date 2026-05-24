@@ -160,3 +160,37 @@ export function routeNumberFromVariantKey(variantKey?: string | null): string | 
   const head = variantKey.split("-")[0];
   return head || null;
 }
+
+/**
+ * Bearing in degrees (0 = north, 90 = east) of the line from `a` to `b`.
+ * Used to rotate direction-of-travel arrows along the polyline. We use a
+ * simple flat-earth approximation since arrow visuals don't require true
+ * great-circle accuracy at city-scale distances.
+ */
+export function bearing(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number }
+): number {
+  const dLat = b.lat - a.lat;
+  const dLon = b.lon - a.lon;
+  // atan2(east, north) → degrees clockwise from north.
+  const deg = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+  return (deg + 360) % 360;
+}
+
+/** Linear interpolate between two lat/lon points by fraction t ∈ [0,1]. */
+export function lerpLatLon(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+  t: number
+): { lat: number; lon: number } {
+  return { lat: a.lat + (b.lat - a.lat) * t, lon: a.lon + (b.lon - a.lon) * t };
+}
+
+/** "in 3 min" / "Passed 2 min ago" / "Now arriving" — for the interest-stop banner. */
+export function relativeStopLabel(now?: string | null, target?: string | null): string {
+  const diff = minutesBetween(now, target);
+  if (Math.abs(diff) < 1) return "Now arriving";
+  if (diff > 0) return diff < 60 ? `in ${diff} min` : formatClock(target);
+  return `${-diff} min ago`;
+}
