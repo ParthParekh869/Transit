@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -64,6 +64,10 @@ export default function TripMap({
   focusedStopKey,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("bus");
+  // Ref to the underlying Leaflet map. Components rendered OUTSIDE
+  // <MapContainer> (e.g. the floating Recenter button) can't use
+  // react-leaflet's useMap() hook, so they call methods on this ref instead.
+  const mapRef = useRef<L.Map | null>(null);
 
   const points = useMemo(
     () =>
@@ -107,7 +111,12 @@ export default function TripMap({
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] shadow-glow">
       <div className="h-[420px]">
-        <MapContainer center={center} zoom={14} scrollWheelZoom>
+        <MapContainer
+          center={center}
+          zoom={14}
+          scrollWheelZoom
+          ref={mapRef}
+        >
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -210,7 +219,21 @@ export default function TripMap({
           </button>
         </div>
 
-        {busPos && <RecenterButton busPos={busPos} viewMode={viewMode} />}
+        {busPos && (
+          <button
+            onClick={() =>
+              mapRef.current?.flyTo(busPos, viewMode === "bus" ? 16 : 14, {
+                animate: true,
+                duration: 0.7,
+              })
+            }
+            className="pointer-events-auto flex items-center gap-2 self-end rounded-xl border border-white/10 bg-ink-900/80 px-3 py-2 text-xs font-semibold text-white/80 backdrop-blur-md shadow-glow transition hover:bg-ink-800/80 hover:text-white"
+            aria-label="Recenter on bus"
+          >
+            <Crosshair className="h-3.5 w-3.5" />
+            Recenter
+          </button>
+        )}
       </div>
     </div>
   );
@@ -275,19 +298,4 @@ function ViewController({
   return null;
 }
 
-/** "Recenter" button — flies the camera back to the bus / current view. */
-function RecenterButton({ busPos, viewMode }: { busPos: [number, number]; viewMode: ViewMode }) {
-  const map = useMap();
-  return (
-    <button
-      onClick={() =>
-        map.flyTo(busPos, viewMode === "bus" ? 16 : 14, { animate: true, duration: 0.7 })
-      }
-      className="pointer-events-auto flex items-center gap-2 self-end rounded-xl border border-white/10 bg-ink-900/80 px-3 py-2 text-xs font-semibold text-white/80 backdrop-blur-md shadow-glow transition hover:bg-ink-800/80 hover:text-white"
-      aria-label="Recenter on bus"
-    >
-      <Crosshair className="h-3.5 w-3.5" />
-      Recenter
-    </button>
-  );
-}
+
