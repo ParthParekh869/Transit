@@ -5,13 +5,16 @@ import { getRouteByNumber } from "@/lib/transit/client";
  * GET /api/transit/routes/{number}
  * Returns a single route's details (including badgeStyle), or 404 if not found.
  */
-export async function GET(_req: Request, { params }: { params: { number: string } }) {
-  const num = params.number;
-  if (!num) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ number: string }> }
+) {
+  const { number } = await params;
+  if (!number) {
     return NextResponse.json({ error: "route number is required" }, { status: 400 });
   }
   try {
-    const route = await getRouteByNumber(num);
+    const route = await getRouteByNumber(number);
     if (!route) return NextResponse.json({ error: "route not found" }, { status: 404 });
     return NextResponse.json({ route });
   } catch (e) {

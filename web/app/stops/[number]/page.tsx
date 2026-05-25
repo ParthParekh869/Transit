@@ -4,11 +4,13 @@ import { ScheduleBoard } from "@/components/ScheduleBoard";
 import { NavBar } from "@/components/NavBar";
 
 interface Props {
-  params: { number: string };
+  // Next 15 made dynamic-route params async; Next 14 accepts a Promise here too.
+  params: Promise<{ number: string }>;
 }
 
-export default function StopPage({ params }: Props) {
-  const stopNumber = Number(params.number);
+export default async function StopPage({ params }: Props) {
+  const { number } = await params;
+  const stopNumber = Number(number);
   if (!Number.isFinite(stopNumber)) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 text-white">Invalid stop number.</main>
