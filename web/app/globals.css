@@ -181,6 +181,77 @@ h1, h2, h3 {
   transition: transform 1.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* ---------- Bus marker pill (route-themed, shows route number) ---------- */
+.bus-marker-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  min-width: 42px;
+  padding: 0 10px;
+  border-radius: 15px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+  border: 2.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.6),
+    0 0 20px currentColor;
+  position: relative;
+  white-space: nowrap;
+}
+.bus-marker-pill::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 20px;
+  border: 2px solid currentColor;
+  opacity: 0.4;
+  animation: bus-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.bus-marker-pill__inner {
+  position: relative;
+  z-index: 1;
+}
+.leaflet-marker-icon.transit-bus-marker {
+  transition: transform 1.4s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 1000 !important;
+}
+
+/* ---------- Interest stop star marker ---------- */
+.interest-marker {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.7));
+  animation: interest-bob 2.4s ease-in-out infinite;
+}
+@keyframes interest-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+.leaflet-marker-icon.transit-interest-stop {
+  transition: transform 1s ease;
+  z-index: 900 !important;
+}
+
+/* ---------- Direction-of-travel arrows ---------- */
+.route-arrow {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+}
+.leaflet-marker-icon.transit-arrow {
+  pointer-events: none !important;
+  z-index: 500 !important;
+}
+
 /* ---------- Stop circles ---------- */
 .stop-circle {
   transition: stroke-width 0.18s ease, fill-opacity 0.18s ease;
@@ -194,9 +265,12 @@ h1, h2, h3 {
   .animate-drift-2,
   .animate-drift-3,
   .bus-marker::before,
+  .bus-marker-pill::before,
   .next-stop-ring,
+  .interest-marker,
   .leaflet-marker-icon.transit-bus-marker,
-  .leaflet-marker-icon.transit-next-stop-ring {
+  .leaflet-marker-icon.transit-next-stop-ring,
+  .leaflet-marker-icon.transit-interest-stop {
     animation: none !important;
     transition: none !important;
   }
