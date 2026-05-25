@@ -4,11 +4,13 @@ import { TripView } from "@/components/TripView";
 import { NavBar } from "@/components/NavBar";
 
 interface Props {
-  params: { key: string };
+  // Next 15 made dynamic-route params async; Next 14 accepts a Promise here too.
+  params: Promise<{ key: string }>;
 }
 
-export default function TripPage({ params }: Props) {
-  const tripKey = Number(params.key);
+export default async function TripPage({ params }: Props) {
+  const { key } = await params;
+  const tripKey = Number(key);
   if (!Number.isFinite(tripKey)) {
     return <main className="mx-auto max-w-4xl px-4 py-10 text-white">Invalid trip key.</main>;
   }
